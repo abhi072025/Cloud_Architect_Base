@@ -1,0 +1,67 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - '*'
+
+variables:
+  - name: ACR_NAME
+    value: '$(acrName)'
+  - name: AKS_RG
+    value: '$(aksRg)'
+  - name: AKS_NAME
+    value: '$(aksName)'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildAndPush
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+          - task: DockerInstaller@0
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr login --name $(ACR_NAME)
+                docker build -t $(ACR_NAME).azurecr.io/orders:$(Build.BuildId) src/services/orders
+                docker build -t $(ACR_NAME).azurecr.io/catalog:$(Build.BuildId) src/services/catalog
+                docker build -t $(ACR_NAME).azurecr.io/gateway:$(Build.BuildId) src/services/gateway
+                docker push $(ACR_NAME).azurecr.io/orders:$(Build.BuildId)
+                docker push $(ACR_NAME).azurecr.io/catalog:$(Build.BuildId)
+                docker push $(ACR_NAME).azurecr.io/gateway:$(Build.BuildId)
+          - publish: src/k8s
+            artifact: manifests
+
+  - stage: Deploy
+    dependsOn: Build
+    jobs:
+      - deployment: AKSDeploy
+        environment: 'archref-dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: manifests
+                - task: AzureCLI@2
+                  inputs:
+                    azureSubscription: '$(serviceConnection)'
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials -g $(AKS_RG) -n $(AKS_NAME) --overwrite-existing
+                      kubectl apply -f $(Pipeline.Workspace)/manifests/namespace.yaml
+                      sed -i "s|<ACR_NAME>|$(ACR_NAME)|g" $(Pipeline.Workspace)/manifests/*.yaml
+                      kubectl apply -f $(Pipeline.Workspace)/manifests
+                      kubectl rollout status deploy/orders -n archref
+                      kubectl rollout status deploy/catalog -n archref
+                      kubectl rollout status deploy/gateway -n archref
