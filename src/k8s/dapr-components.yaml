@@ -1,0 +1,14 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: archref
+spec:
+  type: pubsub.azureservicebus
+  version: v1
+  metadata:
+    - name: connectionString
+      secretRef: sb-conn
+scopes:
+  - orders
+  - catalog
