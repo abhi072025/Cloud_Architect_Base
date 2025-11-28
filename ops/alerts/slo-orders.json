@@ -1,0 +1,11 @@
+{
+  "name": "slo-orders-availability",
+  "signal": "Metric",
+  "metricNamespace": "insights.container/pods",
+  "metricName": "successRate",
+  "operator": "LessThan",
+  "threshold": 0.98,
+  "windowSize": "PT15M",
+  "evaluationFrequency": "PT5M",
+  "actions": [ "email:team@yourorg.example" ]
+}
